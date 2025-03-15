@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cloud Wizard</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            font-family: Arial, sans-serif;
+        }
+        #canvas {
+            width: 100%;
+            height: 100vh;
+            display: block;
+        }
+        #ui {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            color: white;
+            text-shadow: 0 0 5px rgba(0,0,0,0.5);
+            pointer-events: none;
+        }
+        #loading {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(255, 255, 255, 0.8);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-size: 24px;
+            z-index: 1000;
+        }
+        #audio-controls {
+            position: absolute;
+            bottom: 20px;
+            right: 20px;
+            color: white;
+            background-color: rgba(0, 0, 0, 0.5);
+            padding: 10px;
+            border-radius: 5px;
+            display: flex;
+            align-items: center;
+        }
+        #audio-controls button {
+            background: none;
+            border: none;
+            color: white;
+            font-size: 24px;
+            cursor: pointer;
+            margin-right: 10px;
+        }
+        #audio-controls button:hover {
+            color: #ddd;
+        }
+        #score-display {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            color: white;
+            text-shadow: 0 0 5px rgba(0,0,0,0.5);
+            font-size: 18px;
+            text-align: right;
+        }
+    </style>
+</head>
+<body>
+    <div id="loading">Loading...</div>
+    <canvas id="canvas"></canvas>
+    <div id="ui">
+        <h1>Cloud Wizard</h1>
+        <p>Click and hold to create clouds</p>
+        <p>Hover clouds over plants to make them bloom</p>
+    </div>
+    
+    <div id="score-display">
+        <div>Plants Revived: <span id="plants-revived">0</span></div>
+        <div>Magic Power: <span id="magic-power">100</span></div>
+    </div>
+    
+    <div id="audio-controls">
+        <button id="toggle-audio">🔊</button>
+        <span>Background Music</span>
+    </div>
+    
+    <!-- Audio elements (hidden) -->
+    <audio id="background-music" src="audio/background-music.mp3" loop preload="none">
+        <!-- Fallback message -->
+        Your browser does not support the audio element.
+    </audio>
+    <!-- Optional audio files - these may not exist but the game will handle their absence -->
+    <audio id="rain-sound" loop preload="none">
+        <source src="audio/rain.mp3" type="audio/mpeg">
+    </audio>
+    <audio id="plant-grow-sound" preload="none">
+        <source src="audio/plant-grow.mp3" type="audio/mpeg">
+    </audio>
+    <audio id="day-ambient" loop preload="none">
+        <source src="audio/day-ambient.mp3" type="audio/mpeg">
+    </audio>
+    <audio id="night-ambient" loop preload="none">
+        <source src="audio/night-ambient.mp3" type="audio/mpeg">
+    </audio>
+
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+                "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+            }
+        }
+    </script>
+    <script type="module" src="./js/main.js"></script>
+</body>
+</html> 
