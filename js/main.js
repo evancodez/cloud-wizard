@@ -3157,12 +3157,13 @@ class CloudWizard {
         this.dayAmbient = document.getElementById('day-ambient');
         this.nightAmbient = document.getElementById('night-ambient');
         
-        // Initialize flags for audio availability
+        // Initialize flags for audio availability and state
         this.hasBgMusic = false;
         this.hasRainSound = false;
         this.hasPlantSound = false;
         this.hasDayAmbient = false;
         this.hasNightAmbient = false;
+        this.bgMusicStarted = false; // Flag to track if we've already started playing
 
         // Force direct loading of background music
         if (this.backgroundMusic && this.backgroundMusic.tagName === 'AUDIO') {
@@ -3181,32 +3182,39 @@ class CloudWizard {
                 this.tryAlternativeAudioLoading();
             });
             
-            this.backgroundMusic.addEventListener('canplay', () => {
+            // Only trigger once when the audio is ready
+            const onCanPlay = () => {
                 console.log("Background music is ready to play");
                 this.hasBgMusic = true;
                 
-                if (this.audioEnabled) {
+                if (this.audioEnabled && !this.bgMusicStarted) {
                     this.tryPlayBackgroundMusic();
                 }
-            });
+                
+                // Remove the event listener after first trigger
+                this.backgroundMusic.removeEventListener('canplay', onCanPlay);
+            };
+            
+            this.backgroundMusic.addEventListener('canplay', onCanPlay);
             
             // Check if the audio might already be loaded
             if (this.backgroundMusic.readyState >= 2) { // HAVE_CURRENT_DATA or better
                 this.hasBgMusic = true;
                 console.log("Background music already loaded");
-                if (this.audioEnabled) {
+                if (this.audioEnabled && !this.bgMusicStarted) {
                     this.tryPlayBackgroundMusic();
                 }
             }
             
             // Force a direct play attempt after a short delay
             setTimeout(() => {
-                if (this.audioEnabled) {
+                if (this.audioEnabled && !this.bgMusicStarted) {
                     console.log("Attempting direct play of background music");
                     this.backgroundMusic.play()
                         .then(() => {
                             console.log("Direct play successful");
                             this.hasBgMusic = true;
+                            this.bgMusicStarted = true;
                         })
                         .catch(e => {
                             console.warn("Direct play failed:", e);
@@ -3257,7 +3265,12 @@ class CloudWizard {
                 
                 if (this.audioEnabled) {
                     toggleButton.textContent = '🔊';
-                    this.tryPlayBackgroundMusic();
+                    if (!this.bgMusicStarted) {
+                        this.tryPlayBackgroundMusic();
+                    } else if (this.hasBgMusic && this.backgroundMusic.paused) {
+                        // If music was already started but is paused, just resume it
+                        this.backgroundMusic.play().catch(e => {});
+                    }
                     
                     // Resume ambient sounds based on time of day
                     if (this.timeOfDay > 0.2 && this.timeOfDay < 0.8) {
@@ -3295,6 +3308,11 @@ class CloudWizard {
     
     // Try an alternative loading approach for audio
     tryAlternativeAudioLoading() {
+        // Don't try alternative loading if music is already playing
+        if (this.bgMusicStarted) {
+            return;
+        }
+        
         console.log("Trying alternative audio loading approach");
         
         // Create a new audio element programmatically to bypass range requests
@@ -3306,10 +3324,13 @@ class CloudWizard {
             this.backgroundMusic = newAudio;
             this.hasBgMusic = true;
             
-            if (this.audioEnabled) {
+            if (this.audioEnabled && !this.bgMusicStarted) {
                 // Try to play immediately
                 newAudio.play()
-                    .then(() => console.log("Alternative audio playing successfully"))
+                    .then(() => {
+                        console.log("Alternative audio playing successfully");
+                        this.bgMusicStarted = true;
+                    })
                     .catch(e => console.warn("Alternative audio play failed:", e));
             }
         });
@@ -3317,7 +3338,9 @@ class CloudWizard {
         newAudio.addEventListener('error', (e) => {
             console.error("Alternative audio loading also failed:", e);
             // Final fallback - try with a different approach
-            this.tryFinalAudioFallback();
+            if (!this.bgMusicStarted) {
+                this.tryFinalAudioFallback();
+            }
         });
         
         // Configure the audio
@@ -3330,9 +3353,12 @@ class CloudWizard {
         
         // Try playing after a short delay
         setTimeout(() => {
-            if (this.audioEnabled) {
+            if (this.audioEnabled && !this.bgMusicStarted) {
                 newAudio.play()
-                    .then(() => console.log("Delayed alternative audio playing successfully"))
+                    .then(() => {
+                        console.log("Delayed alternative audio playing successfully");
+                        this.bgMusicStarted = true;
+                    })
                     .catch(e => console.warn("Delayed alternative audio play failed:", e));
             }
         }, 1000);
@@ -3340,6 +3366,11 @@ class CloudWizard {
     
     // Final fallback for audio loading
     tryFinalAudioFallback() {
+        // Don't try final fallback if music is already playing
+        if (this.bgMusicStarted) {
+            return;
+        }
+        
         console.log("Trying final audio fallback approach");
         
         // Create an audio context
@@ -3357,6 +3388,11 @@ class CloudWizard {
                 })
                 .then(arrayBuffer => audioContext.decodeAudioData(arrayBuffer))
                 .then(audioBuffer => {
+                    // Don't proceed if music has started playing through another method
+                    if (this.bgMusicStarted) {
+                        return;
+                    }
+                    
                     console.log("Audio loaded via Web Audio API");
                     
                     // Create a buffer source node
@@ -3380,6 +3416,7 @@ class CloudWizard {
                     this.webAudioGain = gainNode;
                     this.webAudioContext = audioContext;
                     this.hasBgMusic = true;
+                    this.bgMusicStarted = true;
                     
                     console.log("Web Audio API playback started");
                     this.showFeedbackMessage("Music enabled");
@@ -3400,9 +3437,12 @@ class CloudWizard {
         
         if (this.audioEnabled) {
             // Try multiple approaches to play background music
-            if (this.hasBgMusic) {
+            if (this.hasBgMusic && !this.bgMusicStarted) {
                 this.tryPlayBackgroundMusic();
-            } else {
+            } else if (this.hasBgMusic && this.backgroundMusic.paused) {
+                // If music was already started but is paused, just resume it
+                this.backgroundMusic.play().catch(e => {});
+            } else if (!this.hasBgMusic && !this.bgMusicStarted) {
                 // If we don't have background music yet, try loading it directly
                 console.log("Background music not ready yet, trying direct approach");
                 this.tryAlternativeAudioLoading();
@@ -3426,7 +3466,7 @@ class CloudWizard {
     
     // Helper method to safely try playing background music
     tryPlayBackgroundMusic() {
-        if (this.hasBgMusic && this.audioEnabled) {
+        if (this.hasBgMusic && this.audioEnabled && !this.bgMusicStarted) {
             console.log("Attempting to play background music");
             
             // Clear any current timeouts
@@ -3434,13 +3474,12 @@ class CloudWizard {
                 clearTimeout(this.bgMusicTimeout);
             }
             
-            // Force load before playing
-            this.backgroundMusic.load();
-            
             // Try playing immediately
             this.backgroundMusic.play()
                 .then(() => {
                     console.log("Background music playing successfully");
+                    this.bgMusicStarted = true; // Mark as started
+                    
                     // Double-check it's actually playing
                     if (this.backgroundMusic.paused) {
                         console.warn("Music reported success but is still paused!");
@@ -3451,23 +3490,33 @@ class CloudWizard {
                 .catch(e => {
                     console.warn("Could not play background music:", e);
                     
-                    // Try again with a timeout
-                    this.bgMusicTimeout = setTimeout(() => {
-                        console.log("Retrying background music playback");
-                        this.backgroundMusic.play()
-                            .then(() => console.log("Delayed play successful"))
-                            .catch(e => {
-                                console.warn("Delayed play also failed:", e);
-                                // Last resort - create a new audio element
-                                if (!this.retriedAlternative) {
-                                    this.retriedAlternative = true;
-                                    this.tryAlternativeAudioLoading();
-                                }
-                            });
-                    }, 1000);
+                    // Try again with a timeout only if we haven't started yet
+                    if (!this.bgMusicStarted) {
+                        this.bgMusicTimeout = setTimeout(() => {
+                            if (!this.bgMusicStarted) { // Double-check we still need to try
+                                console.log("Retrying background music playback");
+                                this.backgroundMusic.play()
+                                    .then(() => {
+                                        console.log("Delayed play successful");
+                                        this.bgMusicStarted = true;
+                                    })
+                                    .catch(e => {
+                                        console.warn("Delayed play also failed:", e);
+                                        // Last resort - create a new audio element
+                                        if (!this.retriedAlternative && !this.bgMusicStarted) {
+                                            this.retriedAlternative = true;
+                                            this.tryAlternativeAudioLoading();
+                                        }
+                                    });
+                            }
+                        }, 1000);
+                    }
                 });
+        } else if (this.hasBgMusic && this.audioEnabled && this.bgMusicStarted && this.backgroundMusic.paused) {
+            // If music was already started but is paused, just resume it
+            this.backgroundMusic.play().catch(e => {});
         } else {
-            console.warn("Cannot play background music - not available or audio disabled");
+            console.warn("Cannot play background music - not available, already playing, or audio disabled");
         }
     }
     
