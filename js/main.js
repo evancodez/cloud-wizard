@@ -3164,6 +3164,7 @@ class CloudWizard {
         this.hasDayAmbient = false;
         this.hasNightAmbient = false;
         this.bgMusicStarted = false; // Flag to track if we've already started playing
+        this.canPlayHandlerAttached = false; // Flag to track if the canplay handler is attached
 
         // Force direct loading of background music
         if (this.backgroundMusic && this.backgroundMusic.tagName === 'AUDIO') {
@@ -3172,30 +3173,36 @@ class CloudWizard {
             // Set volume before loading
             this.backgroundMusic.volume = 0.4;
             
-            // Force load the audio file
-            this.backgroundMusic.load();
+            // IMPORTANT: Remove any existing event listeners first
+            // This ensures we don't have duplicate handlers
+            this.backgroundMusic.oncanplay = null;
+            this.backgroundMusic.onerror = null;
             
-            // Set up event handlers
-            this.backgroundMusic.addEventListener('error', (e) => {
+            // Set up event handlers using onevent syntax instead of addEventListener
+            // This ensures only one handler exists at a time
+            this.backgroundMusic.onerror = (e) => {
                 console.error("Background music error:", e);
                 // Try an alternative approach if the normal one fails
-                this.tryAlternativeAudioLoading();
-            });
-            
-            // Only trigger once when the audio is ready
-            const onCanPlay = () => {
-                console.log("Background music is ready to play");
-                this.hasBgMusic = true;
-                
-                if (this.audioEnabled && !this.bgMusicStarted) {
-                    this.tryPlayBackgroundMusic();
+                if (!this.bgMusicStarted) {
+                    this.tryAlternativeAudioLoading();
                 }
-                
-                // Remove the event listener after first trigger
-                this.backgroundMusic.removeEventListener('canplay', onCanPlay);
             };
             
-            this.backgroundMusic.addEventListener('canplay', onCanPlay);
+            // Use the onevent property instead of addEventListener for canplay
+            this.backgroundMusic.oncanplay = () => {
+                // Only proceed if we haven't started playing yet
+                if (this.bgMusicStarted) {
+                    console.log("Background music is already playing, ignoring canplay event");
+                    return;
+                }
+                
+                console.log("Background music is ready to play (one-time handler)");
+                this.hasBgMusic = true;
+                
+                if (this.audioEnabled) {
+                    this.tryPlayBackgroundMusic();
+                }
+            };
             
             // Check if the audio might already be loaded
             if (this.backgroundMusic.readyState >= 2) { // HAVE_CURRENT_DATA or better
@@ -3205,6 +3212,9 @@ class CloudWizard {
                     this.tryPlayBackgroundMusic();
                 }
             }
+            
+            // Force load the audio file
+            this.backgroundMusic.load();
             
             // Force a direct play attempt after a short delay
             setTimeout(() => {
@@ -3230,31 +3240,31 @@ class CloudWizard {
         
         // Handle other audio elements - these might be missing but that's OK
         if (this.rainSound && this.rainSound.tagName === 'AUDIO') {
-            this.rainSound.addEventListener('canplay', () => {
+            this.rainSound.oncanplay = () => {
                 this.hasRainSound = true;
                 this.rainSound.volume = 0;
-            });
+            };
         }
         
         if (this.plantGrowSound && this.plantGrowSound.tagName === 'AUDIO') {
-            this.plantGrowSound.addEventListener('canplay', () => {
+            this.plantGrowSound.oncanplay = () => {
                 this.hasPlantSound = true;
                 this.plantGrowSound.volume = 0.5;
-            });
+            };
         }
         
         if (this.dayAmbient && this.dayAmbient.tagName === 'AUDIO') {
-            this.dayAmbient.addEventListener('canplay', () => {
+            this.dayAmbient.oncanplay = () => {
                 this.hasDayAmbient = true;
                 this.dayAmbient.volume = 0.3;
-            });
+            };
         }
         
         if (this.nightAmbient && this.nightAmbient.tagName === 'AUDIO') {
-            this.nightAmbient.addEventListener('canplay', () => {
+            this.nightAmbient.oncanplay = () => {
                 this.hasNightAmbient = true;
                 this.nightAmbient.volume = 0;
-            });
+            };
         }
         
         // Setup audio toggle button
@@ -3310,6 +3320,7 @@ class CloudWizard {
     tryAlternativeAudioLoading() {
         // Don't try alternative loading if music is already playing
         if (this.bgMusicStarted) {
+            console.log("Music already started, not attempting alternative loading");
             return;
         }
         
@@ -3318,30 +3329,44 @@ class CloudWizard {
         // Create a new audio element programmatically to bypass range requests
         const newAudio = new Audio();
         
+        // Remove any existing event handlers first
+        newAudio.oncanplay = null;
+        newAudio.onerror = null;
+        
         // Set up event handlers before setting src
-        newAudio.addEventListener('canplay', () => {
+        newAudio.oncanplay = () => {
+            // Don't proceed if we've already started playing
+            if (this.bgMusicStarted) {
+                return;
+            }
+            
             console.log("Alternative audio loading successful");
             this.backgroundMusic = newAudio;
             this.hasBgMusic = true;
             
-            if (this.audioEnabled && !this.bgMusicStarted) {
+            if (this.audioEnabled) {
+                // Set flag before attempting to play
+                this.bgMusicStarted = true;
+                
                 // Try to play immediately
                 newAudio.play()
                     .then(() => {
                         console.log("Alternative audio playing successfully");
-                        this.bgMusicStarted = true;
                     })
-                    .catch(e => console.warn("Alternative audio play failed:", e));
+                    .catch(e => {
+                        console.warn("Alternative audio play failed:", e);
+                        this.bgMusicStarted = false; // Reset flag if play fails
+                    });
             }
-        });
+        };
         
-        newAudio.addEventListener('error', (e) => {
+        newAudio.onerror = (e) => {
             console.error("Alternative audio loading also failed:", e);
             // Final fallback - try with a different approach
             if (!this.bgMusicStarted) {
                 this.tryFinalAudioFallback();
             }
-        });
+        };
         
         // Configure the audio
         newAudio.loop = true;
@@ -3351,17 +3376,26 @@ class CloudWizard {
         // Force load
         newAudio.load();
         
-        // Try playing after a short delay
-        setTimeout(() => {
+        // Only try playing after a short delay if not already playing
+        let delayedPlayTimeout = setTimeout(() => {
+            // Double-check we still need to try
             if (this.audioEnabled && !this.bgMusicStarted) {
+                // Set flag before attempting to play
+                this.bgMusicStarted = true;
+                
                 newAudio.play()
                     .then(() => {
                         console.log("Delayed alternative audio playing successfully");
-                        this.bgMusicStarted = true;
                     })
-                    .catch(e => console.warn("Delayed alternative audio play failed:", e));
+                    .catch(e => {
+                        console.warn("Delayed alternative audio play failed:", e);
+                        this.bgMusicStarted = false; // Reset flag if play fails
+                    });
             }
         }, 1000);
+        
+        // Clean up timeout if component is destroyed
+        this.alternativePlayTimeout = delayedPlayTimeout;
     }
     
     // Final fallback for audio loading
@@ -3435,12 +3469,24 @@ class CloudWizard {
     startAudioOnUserInteraction = () => {
         console.log("User interaction detected - attempting to play audio");
         
+        // Don't do anything if we've already started music
+        if (this.bgMusicStarted && !this.backgroundMusic?.paused) {
+            console.log("Music already playing, no need to start again");
+            
+            // Still remove the event listeners
+            document.removeEventListener('click', this.startAudioOnUserInteraction);
+            document.removeEventListener('keydown', this.startAudioOnUserInteraction);
+            
+            return;
+        }
+        
         if (this.audioEnabled) {
             // Try multiple approaches to play background music
             if (this.hasBgMusic && !this.bgMusicStarted) {
                 this.tryPlayBackgroundMusic();
             } else if (this.hasBgMusic && this.backgroundMusic.paused) {
                 // If music was already started but is paused, just resume it
+                console.log("Resuming paused music from user interaction");
                 this.backgroundMusic.play().catch(e => {});
             } else if (!this.hasBgMusic && !this.bgMusicStarted) {
                 // If we don't have background music yet, try loading it directly
@@ -3466,19 +3512,28 @@ class CloudWizard {
     
     // Helper method to safely try playing background music
     tryPlayBackgroundMusic() {
-        if (this.hasBgMusic && this.audioEnabled && !this.bgMusicStarted) {
+        // If music has already started playing, don't try again
+        if (this.bgMusicStarted) {
+            console.log("Music already started, not attempting to play again");
+            return;
+        }
+        
+        if (this.hasBgMusic && this.audioEnabled) {
             console.log("Attempting to play background music");
             
             // Clear any current timeouts
             if (this.bgMusicTimeout) {
                 clearTimeout(this.bgMusicTimeout);
+                this.bgMusicTimeout = null;
             }
+            
+            // Set flag BEFORE trying to play to avoid race conditions
+            this.bgMusicStarted = true;
             
             // Try playing immediately
             this.backgroundMusic.play()
                 .then(() => {
                     console.log("Background music playing successfully");
-                    this.bgMusicStarted = true; // Mark as started
                     
                     // Double-check it's actually playing
                     if (this.backgroundMusic.paused) {
@@ -3486,37 +3541,47 @@ class CloudWizard {
                         // Try again with a timeout
                         setTimeout(() => this.backgroundMusic.play(), 500);
                     }
+                    
+                    // Remove the event handlers to prevent further triggers
+                    this.backgroundMusic.oncanplay = null;
                 })
                 .catch(e => {
                     console.warn("Could not play background music:", e);
                     
-                    // Try again with a timeout only if we haven't started yet
-                    if (!this.bgMusicStarted) {
-                        this.bgMusicTimeout = setTimeout(() => {
-                            if (!this.bgMusicStarted) { // Double-check we still need to try
-                                console.log("Retrying background music playback");
-                                this.backgroundMusic.play()
-                                    .then(() => {
-                                        console.log("Delayed play successful");
-                                        this.bgMusicStarted = true;
-                                    })
-                                    .catch(e => {
-                                        console.warn("Delayed play also failed:", e);
-                                        // Last resort - create a new audio element
-                                        if (!this.retriedAlternative && !this.bgMusicStarted) {
-                                            this.retriedAlternative = true;
-                                            this.tryAlternativeAudioLoading();
-                                        }
-                                    });
-                            }
-                        }, 1000);
-                    }
+                    // Reset the flag since playback failed
+                    this.bgMusicStarted = false;
+                    
+                    // Try again with a timeout
+                    this.bgMusicTimeout = setTimeout(() => {
+                        console.log("Retrying background music playback");
+                        
+                        // Set flag again before retrying
+                        this.bgMusicStarted = true;
+                        
+                        this.backgroundMusic.play()
+                            .then(() => {
+                                console.log("Delayed play successful");
+                            })
+                            .catch(e => {
+                                console.warn("Delayed play also failed:", e);
+                                
+                                // Reset the flag again since playback failed
+                                this.bgMusicStarted = false;
+                                
+                                // Last resort - create a new audio element
+                                if (!this.retriedAlternative) {
+                                    this.retriedAlternative = true;
+                                    this.tryAlternativeAudioLoading();
+                                }
+                            });
+                    }, 1000);
                 });
-        } else if (this.hasBgMusic && this.audioEnabled && this.bgMusicStarted && this.backgroundMusic.paused) {
-            // If music was already started but is paused, just resume it
+        } else if (this.hasBgMusic && this.audioEnabled && this.backgroundMusic.paused) {
+            // If music was previously started but is paused, just resume it
+            console.log("Resuming paused music");
             this.backgroundMusic.play().catch(e => {});
         } else {
-            console.warn("Cannot play background music - not available, already playing, or audio disabled");
+            console.warn("Cannot play background music - not available or audio disabled");
         }
     }
     
